@@ -1,0 +1,29 @@
+#!/bin/bash
+# NyxLite main menu (text only)
+while true; do
+  c=$(dialog --stdout --clear --no-shadow --backtitle "NyxLite" --title " NyxLite " \
+    --menu "HP Stream 11 - text mode" 18 56 9 \
+    1 "Files (Midnight Commander)" \
+    2 "Edit a file (nano)" \
+    3 "Wi-Fi / network (nmtui)" \
+    4 "Web browser (lynx)" \
+    5 "System monitor (htop)" \
+    6 "Disk usage (ncdu)" \
+    7 "Install NyxLite to internal storage" \
+    8 "Shell" \
+    9 "Power off" \
+    0 "Reboot") || c=8
+  clear
+  case $c in
+    1) mc;;
+    2) f=$(dialog --stdout --inputbox "File to edit:" 8 50 ~/notes.txt) && nano "$f";;
+    3) sudo nmtui;;
+    4) u=$(dialog --stdout --inputbox "URL:" 8 50 "https://duckduckgo.com/lite") && lynx "$u";;
+    5) htop;;
+    6) ncdu ~;;
+    7) sudo nyx-install;;
+    8) NYX_SKIP=1 bash -l; ;;
+    9) sudo poweroff;;
+    0) sudo reboot;;
+  esac
+done

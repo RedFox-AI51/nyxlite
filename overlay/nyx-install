@@ -1,0 +1,40 @@
+#!/bin/bash
+# Installs the running NyxLite live system onto an internal disk (UEFI, GPT).
+set -e
+[ "$(id -u)" = 0 ] || exec sudo "$0" "$@"
+mount | grep -q ' / type overlay' || { echo "Run this from the live USB."; exit 1; }
+[ -d /sys/firmware/efi ] || { echo "Not booted in UEFI mode - reboot via the UEFI boot menu."; exit 1; }
+
+echo "Disks:"; lsblk -dno NAME,SIZE,MODEL,TRAN | grep -v -E '^(loop|sr|zram)'
+read -rp "Install to which disk (e.g. mmcblk0, sda)? " d
+D=/dev/$d; [ -b "$D" ] || { echo "No such disk"; exit 1; }
+echo; lsblk "$D"
+echo; echo "!! ALL DATA ON $D (including Windows) WILL BE ERASED !!"
+read -rp "Type ERASE to continue: " a; [ "$a" = ERASE ] || { echo cancelled; exit 1; }
+
+P=$D; case $D in *mmcblk*|*nvme*) P=${D}p;; esac
+sgdisk --zap-all "$D"
+sgdisk -n1:0:+300M -t1:ef00 -c1:ESP -n2:0:0 -t2:8300 -c2:nyxroot "$D"
+partprobe "$D"; sleep 2
+mkfs.vfat -F32 -n NYXEFI "${P}1"; mkfs.ext4 -F -L nyxroot "${P}2"
+mkdir -p /mnt/t; mount "${P}2" /mnt/t; mkdir -p /mnt/t/boot/efi; mount "${P}1" /mnt/t/boot/efi
+echo "Copying system (a few minutes)..."
+rsync -aHAX --info=progress2 --exclude='/proc/*' --exclude='/sys/*' --exclude='/dev/*' \
+  --exclude='/run/*' --exclude='/tmp/*' --exclude='/mnt/*' --exclude='/media/*' --exclude='/cdrom' / /mnt/t/
+mkdir -p /mnt/t/{proc,sys,dev,run,tmp,mnt}
+U=$(blkid -s UUID -o value "${P}2"); E=$(blkid -s UUID -o value "${P}1")
+printf 'UUID=%s / ext4 defaults,noatime 0 1\nUUID=%s /boot/efi vfat umask=0077 0 2\n' "$U" "$E" > /mnt/t/etc/fstab
+echo nyxlite > /mnt/t/etc/hostname
+for m in dev proc sys; do mount --bind /$m /mnt/t/$m; done
+mount --bind /sys/firmware/efi/efivars /mnt/t/sys/firmware/efi/efivars 2>/dev/null || mount -t efivarfs efivarfs /mnt/t/sys/firmware/efi/efivars 2>/dev/null || true
+chroot /mnt/t /bin/bash -e <<C
+apt-get purge -y casper >/dev/null 2>&1 || true
+update-initramfs -u -k all
+grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=NyxLite --removable --no-nvram 2>&1 | tail -1
+grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=NyxLite 2>&1 | tail -1 || true
+sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="quiet loglevel=3"/;s/^#\?GRUB_TIMEOUT_STYLE=.*/GRUB_TIMEOUT_STYLE=hidden/' /etc/default/grub
+grep -q GRUB_TIMEOUT= /etc/default/grub && sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=2/' /etc/default/grub
+update-grub
+C
+sync; umount -R /mnt/t
+echo "Done. Remove the USB and reboot."
