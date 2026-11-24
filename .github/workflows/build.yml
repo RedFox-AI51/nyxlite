@@ -1,0 +1,21 @@
+name: Build NyxLite ISO
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y debootstrap squashfs-tools xorriso grub-pc-bin grub-efi-amd64-bin grub-common mtools dosfstools
+      - name: Build ISO
+        run: sudo ./build.sh
+      - name: Checksum
+        run: sudo sha256sum /tmp/nyx/nyxlite.iso | tee /tmp/nyx/nyxlite.iso.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nyxlite-iso
+          path: |
+            /tmp/nyx/nyxlite.iso
+            /tmp/nyx/nyxlite.iso.sha256
+          compression-level: 0
